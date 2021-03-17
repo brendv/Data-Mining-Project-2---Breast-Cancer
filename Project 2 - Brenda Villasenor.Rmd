@@ -1,0 +1,229 @@
+---
+title: "Project 2 - Brenda Villasenor"
+author: "Brenda Villasenor"
+date: "3/16/2021"
+output: word_document
+---
+
+```{r Load, echo=TRUE}
+#Load libraries
+library(caret)
+library(e1071)
+library(klaR)
+library(nnet)
+library(neuralnet)
+library(MASS)
+library(rpart)
+library(MASS)
+library(klaR)
+library(randomForest)
+
+##Load Breast Cancer data
+require(mlbench)
+data(BreastCancer)
+mydata <- BreastCancer
+mydata <- cbind(BreastCancer[11],BreastCancer[2:10]) 
+
+```
+
+```{r Clean Data, echo=TRUE}
+##Clean data
+str(mydata) #review data types
+summary(mydata) #check for missing values
+
+#change predictor variables to integers 
+for(i in 2:ncol(mydata)) {       
+  mydata[ , i] <- as.integer(mydata[ , i])
+}
+
+#replace missing values with median
+mydata$Bare.nuclei[is.na(mydata$Bare.nuclei)]<-median(mydata$Bare.nuclei,na.rm=TRUE) #replace missing variable with median 
+summary(mydata) 
+```
+
+```{r Partition Data, echo=TRUE}
+##Create test and validation data sets
+set.seed(1)
+mydata.train.index <- sample(c(1:dim(mydata)[1]), dim(mydata)[1]*0.6) #training data set will be 60% of total records
+
+#Generate data frames
+mydata.train.df <- mydata[mydata.train.index, ] 
+mydata.val.df <- mydata[-mydata.train.index, ] 
+
+```
+
+```{r Support Vector Machines, echo=TRUE}
+###Run various classification models
+
+##Support Vector Machines
+mysvm <- svm(Class ~ ., mydata.train.df) #train model
+
+mysvm.train.pred <- predict(mysvm, mydata.train.df) #predictions with training data set
+confusionMatrix(as.factor(mysvm.train.pred), as.factor(mydata.train.df$Class)) #review performance
+
+mysvm.val.pred <- predict(mysvm, mydata.val.df) #prediction with validation data set
+confusionMatrix(as.factor(mysvm.val.pred), as.factor(mydata.val.df$Class)) #review performance
+
+
+```
+
+```{r Naive Bayes, echo=TRUE}
+##Naive Bayes
+mynb <- NaiveBayes(Class ~ ., mydata.train.df) #train model
+
+mynb.pred <- predict(mynb, mydata.train.df) #predictions with training data set
+confusionMatrix(as.factor(mynb.pred$class), as.factor(mydata.train.df$Class)) #review performance
+
+mynb.val.pred <- predict(mynb, mydata.val.df) #prediction with validation data set
+confusionMatrix(as.factor(mynb.val.pred$class), as.factor(mydata.val.df$Class))  #review performance 
+
+```
+
+```{r Neural Networks, echo=TRUE}
+##Neural Networks
+#set up training and validation set for normalized data
+
+#create numeric data set 
+mydata$malignant <- ifelse(mydata$Class == "malignant",1,0)  #create label variable
+num.df <- as.data.frame(apply(mydata[,2:11],2,as.integer)) #create numeric data frame
+num.df <- cbind(num.df[10],num.df[1:9]) #reorder columns
+
+#Create training and validation data sets
+norm.train.df <- num.df[mydata.train.index, ] 
+norm.val.df <- num.df[-mydata.train.index, ] 
+
+#Normalize data
+norm.vals <- preProcess(norm.train.df[,2:10])
+n.train.df <- predict(norm.vals, norm.train.df)
+n.valid.df <- predict(norm.vals, norm.val.df)
+
+#Train model and run predictions
+mynnet <- neuralnet(malignant ~ .,linear.output = T, data = n.train.df, hidden = c(2,2)) #train model
+
+mynnet.pred.t <- compute(mynnet, n.train.df) #create predictions for training data frame
+class.t <- ifelse(mynnet.pred.t$net.result > .5, 1, 0)
+confusionMatrix(as.factor(class.t), as.factor(n.train.df$malignant)) #review performance
+
+
+mynnet.pred.v <- compute(mynnet, n.valid.df) #create predictions for validation data frame
+class.v <- ifelse(mynnet.pred.v$net.result > .5, 1, 0)
+confusionMatrix(as.factor(class.v), as.factor(n.valid.df$malignant)) #review performance
+
+```
+
+```{r Decision Trees, echo=TRUE}
+##Decision trees
+mytree <- rpart(Class ~ ., mydata.train.df) #train model
+
+plot(mytree); text(mytree) #plot tree
+summary(mytree) 
+
+mytree.pred.t <- predict(mytree,mydata.train.df,type="class") #create predictions with training data frame
+confusionMatrix(as.factor(mytree.pred.t), as.factor(mydata.train.df$Class)) #review performance
+
+mytree.pred.v <- predict(mytree,mydata.val.df,type="class") #create predictions with validation data frame
+confusionMatrix(as.factor(mytree.pred.v), as.factor(mydata.val.df$Class)) #review performance
+
+```
+
+```{r Leave-1-Out Cross Validation, echo=TRUE}
+## Leave-1-Out Cross Validation (LOOCV)
+ans <- numeric(length(mydata.val.df[,1]))
+
+for (i in 1:length(mydata.val.df[,1])) {
+  mytree <- rpart(Class ~ ., mydata.val.df[-i,])
+  mytree.pred <- predict(mytree,mydata.val.df[i,],type="class")
+  ans[i] <- mytree.pred
+}
+
+myans <- factor(ans,labels=levels(mydata.val.df$Class))
+confusionMatrix(as.factor(myans), as.factor(mydata.val.df$Class)) #review performance
+#The same as above in this case
+```
+
+```{r Quadratic Discriminant Analysis, echo=TRUE}
+##Quadratic Discriminant Analysis
+myqda <- qda(Class ~ ., mydata.train.df) #train model
+
+myqda.pred.t <- predict(myqda, mydata.train.df) #create predictions
+confusionMatrix(as.factor(myqda.pred.t$class), as.factor(mydata.train.df$Class)) #review performance
+
+myqda.pred.v <- predict(myqda, mydata.val.df) #create predictions
+confusionMatrix(as.factor(myqda.pred.v$class), as.factor(mydata.val.df$Class)) #review performance
+```
+
+```{r Regularised Discriminant Analysis, echo=TRUE}
+##Regularised Discriminant Analysis
+myrda <- rda(Class ~ ., mydata.train.df) #train model
+
+myrda.pred.t <- predict(myrda, mydata.train.df) #create predictions
+confusionMatrix(as.factor(myrda.pred.t$class), as.factor(mydata.train.df$Class)) #review performance
+
+myrda.pred.v <- predict(myrda, mydata.val.df) #create predictions
+confusionMatrix(as.factor(myrda.pred.v$class), as.factor(mydata.val.df$Class)) #review performance
+```
+
+```{r Random Forests, echo=TRUE}
+##Random Forests
+myrf <- randomForest(Class ~ .,mydata.train.df) #train model 
+
+myrf.pred.t <- predict(myrf, mydata.train.df) #create predictions
+confusionMatrix(as.factor(myrf.pred.t), as.factor(mydata.train.df$Class)) #review performance
+
+myrf.pred.v <- predict(myrf, mydata.val.df) #create predictions
+confusionMatrix(as.factor(myrf.pred.v), as.factor(mydata.val.df$Class)) #review performance
+```
+
+```{r Ensemble, echo=TRUE}
+###Combining the output in an ensemble fashion   
+combo.df <- cbind(as.data.frame(mysvm.val.pred)[1], as.data.frame(mynb.val.pred)[1],
+                  as.data.frame(class.v)[1], as.data.frame(mytree.pred.v)[1], as.data.frame(myans)[1], 
+                  as.data.frame(myqda.pred.v)[1], as.data.frame(myrda.pred.v)[1], as.data.frame(myrf.pred.v)[1])
+
+colnames(combo.df) <- c("svm", "nb", "nnet","tree","lev1cross", "quad", "rda", "ranfor" ) #add column names to our data frame
+
+
+#change variables to numeric
+for(i in 1:ncol(combo.df)) {     
+  combo.df[ , i] <- ifelse(combo.df[ , i] == "malignant", 1, 0)
+}
+
+#add a column for the sum of each row in the ensemble data frame 
+combo.df$rowsum <- rowSums(as.matrix(combo.df))
+head(combo.df) 
+
+#create a class for the majority rule ensemble approach
+combo.df$malfactor <- ifelse(combo.df$rowsum > 4, "malignant", "benign")
+
+#Review performance
+confusionMatrix(as.factor(combo.df$malfactor), as.factor(mydata.val.df$Class))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
